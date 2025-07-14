@@ -7,6 +7,9 @@ class ToDoTile extends StatelessWidget {
   final bool isStarred;
   final Function(bool?)? onChanged;
   final Function(BuildContext context)? deleteFunction;
+  final VoidCallback onToggleStar;
+  final VoidCallback onEdit;
+  final VoidCallback onAddReminder;
 
   const ToDoTile({
     super.key,
@@ -15,6 +18,9 @@ class ToDoTile extends StatelessWidget {
     required this.isStarred,
     required this.onChanged,
     required this.deleteFunction,
+    required this.onToggleStar,
+    required this.onEdit,
+    required this.onAddReminder,
   });
 
   @override
@@ -25,6 +31,18 @@ class ToDoTile extends StatelessWidget {
         endActionPane: ActionPane(
           motion: const StretchMotion(),
           children: [
+            SlidableAction(
+              onPressed: (_) => onEdit(),
+              icon: Icons.edit,
+              backgroundColor: Colors.blueAccent,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            SlidableAction(
+              onPressed: (_) => onAddReminder(),
+              icon: Icons.calendar_today_rounded,
+              backgroundColor: Colors.orangeAccent,
+              borderRadius: BorderRadius.circular(12),
+            ),
             SlidableAction(
               onPressed: deleteFunction,
               icon: Icons.delete,
@@ -46,10 +64,7 @@ class ToDoTile extends StatelessWidget {
                 onChanged: onChanged,
                 activeColor: Theme.of(context).primaryColor,
               ),
-              if (isStarred)
-                const Icon(Icons.star, color: Colors.amber, size: 20),
-              const SizedBox(width: 5),
-              Flexible(
+              Expanded(
                 child: Text(
                   taskName,
                   style: TextStyle(
@@ -60,6 +75,13 @@ class ToDoTile extends StatelessWidget {
                   ),
                 ),
               ),
+              GestureDetector(
+                onTap: onToggleStar,
+                child: Icon(
+                  isStarred ? Icons.star : Icons.star_border,
+                  color: isStarred ? Colors.amber : Colors.grey,
+                ),
+              ),
             ],
           ),
         ),
@@ -67,5 +89,4 @@ class ToDoTile extends StatelessWidget {
     );
   }
 }
-
 

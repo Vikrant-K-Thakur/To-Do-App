@@ -1,15 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:my_flutter_app/data/database.dart';
-import 'package:my_flutter_app/util/dialog_box.dart';
-import 'package:my_flutter_app/util/todo_tile.dart';
+import 'package:my_flutter_app/widgets/reminder_dialog.dart';
+import 'package:my_flutter_app/widgets/dialog_box.dart';
+import 'package:my_flutter_app/widgets/todo_tile.dart';
 import 'package:my_flutter_app/util/color_mode.dart';
-import 'calendar_page.dart';
-import 'me_page.dart';
+import '../pages/calendar_page.dart';
+import '../pages/me_page.dart';
 
 class HomePage extends StatefulWidget {
   final ValueNotifier<ColorMode> colorModeNotifier;
-
   const HomePage({super.key, required this.colorModeNotifier});
 
   @override
@@ -27,19 +27,19 @@ class _HomePageState extends State<HomePage> {
   bool _isStarred = false;
   bool _hasReminder = false;
   bool _isRecurring = false;
+  int? _editingIndex;
 
   final _todoBox = Hive.box('todo_box');
   ToDoDataBase db = ToDoDataBase();
 
   @override
   void initState() {
+    super.initState();
     if (_todoBox.get('TODOLIST') == null) {
       db.createInitialData();
     } else {
-      // Migrate if old list format is found
       final oldData = _todoBox.get('TODOLIST');
       if (oldData is List && oldData.isNotEmpty && oldData[0] is List) {
-        // Convert old ["Task", false] to map
         db.toDoList = oldData.map((e) {
           return {
             'title': e[0],
@@ -53,22 +53,18 @@ class _HomePageState extends State<HomePage> {
             'isRecurring': false,
           };
         }).toList();
-        db.updateDataBase(); // Save updated format
+        db.updateDataBase();
       } else {
         db.loadData();
       }
     }
-    super.initState();
   }
 
   void cycleColorMode() {
     final current = widget.colorModeNotifier.value;
-    final next =
-        ColorMode.values[(current.index + 1) % ColorMode.values.length];
+    final next = ColorMode.values[(current.index + 1) % ColorMode.values.length];
     widget.colorModeNotifier.value = next;
-
-    final settingsBox = Hive.box('settings');
-    settingsBox.put('themeIndex', next.index);
+    Hive.box('settings').put('themeIndex', next.index);
   }
 
   void checkboxChanged(bool? value, int index) {
@@ -78,40 +74,74 @@ class _HomePageState extends State<HomePage> {
     db.updateDataBase();
   }
 
-  void saveNewTask() {
+  void toggleStar(int index) {
     setState(() {
-      db.toDoList.add({
-        'title': _controller.text,
-        'isCompleted': false,
-        'date': _dateController.text,
-        'time': _timeController.text,
-        'category': _categoryController.text,
-        'subtasks': _subtasks,
-        'isStarred': _isStarred,
-        'hasReminder': _hasReminder,
-        'isRecurring': _isRecurring,
-      });
-
-      _controller.clear();
-      _dateController.clear();
-      _timeController.clear();
-      _categoryController.clear();
-      _subtasks = [];
-      _isStarred = false;
-      _hasReminder = false;
-      _isRecurring = false;
+      db.toDoList[index]['isStarred'] = !db.toDoList[index]['isStarred'];
     });
-
-    Navigator.of(context).pop();
     db.updateDataBase();
   }
 
-  void createNewTask() {
-    _subtasks = [];
-    _isStarred = false;
-    _hasReminder = false;
-    _isRecurring = false;
+  void editTask(int index) {
+    final task = db.toDoList[index];
+    _controller.text = task['title'];
+    _dateController.text = task['date'];
+    _timeController.text = task['time'];
+    _categoryController.text = task['category'];
+    _subtasks = List<String>.from(task['subtasks']);
+    _isStarred = task['isStarred'];
+    _hasReminder = task['hasReminder'];
+    _isRecurring = task['isRecurring'];
+    _editingIndex = index;
 
+    _showDialog();
+  }
+
+  void addReminder(int index) {
+    final task = db.toDoList[index];
+    _controller.text = task['title'];
+    _dateController.text = task['date'];
+    _timeController.text = task['time'];
+    _editingIndex = index;
+
+    _showReminderDialog();
+  }
+
+  void _showReminderDialog() {
+    if (_editingIndex == null) return;
+
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return ReminderDialog(
+          parentContext: context,
+          dateController: _dateController,
+          timeController: _timeController,
+          onSave: () {
+            setState(() {
+              final task = db.toDoList[_editingIndex!];
+              task['date'] = _dateController.text;
+              task['time'] = _timeController.text;
+              task['hasReminder'] = true;
+              db.toDoList[_editingIndex!] = task;
+              db.updateDataBase();
+              _editingIndex = null;
+              _dateController.clear();
+              _timeController.clear();
+            });
+            Navigator.pop(ctx);
+          },
+          onCancel: () {
+            _editingIndex = null;
+            _dateController.clear();
+            _timeController.clear();
+            Navigator.pop(ctx);
+          },
+        );
+      },
+    );
+  }
+
+  void _showDialog() {
     showDialog(
       context: context,
       builder: (context) {
@@ -130,8 +160,39 @@ class _HomePageState extends State<HomePage> {
             _hasReminder = reminder;
             _isRecurring = recurring;
           },
-          onSave: saveNewTask,
+          onSave: () {
+            setState(() {
+              final updatedTask = {
+                'title': _controller.text,
+                'isCompleted': false,
+                'date': _dateController.text,
+                'time': _timeController.text,
+                'category': _categoryController.text,
+                'subtasks': _subtasks,
+                'isStarred': _isStarred,
+                'hasReminder': _hasReminder,
+                'isRecurring': _isRecurring,
+              };
+              if (_editingIndex != null) {
+                db.toDoList[_editingIndex!] = updatedTask;
+              } else {
+                db.toDoList.add(updatedTask);
+              }
+              _editingIndex = null;
+              _controller.clear();
+              _dateController.clear();
+              _timeController.clear();
+              _categoryController.clear();
+              _subtasks = [];
+              _isStarred = false;
+              _hasReminder = false;
+              _isRecurring = false;
+            });
+            db.updateDataBase();
+            Navigator.of(context).pop();
+          },
           onCancel: () {
+            _editingIndex = null;
             _controller.clear();
             _dateController.clear();
             _timeController.clear();
@@ -142,6 +203,19 @@ class _HomePageState extends State<HomePage> {
         );
       },
     );
+  }
+
+  void createNewTask() {
+    _controller.clear();
+    _dateController.clear();
+    _timeController.clear();
+    _categoryController.clear();
+    _subtasks = [];
+    _isStarred = false;
+    _hasReminder = false;
+    _isRecurring = false;
+    _editingIndex = null;
+    _showDialog();
   }
 
   void deleteTask(int index) {
@@ -158,6 +232,9 @@ class _HomePageState extends State<HomePage> {
         db: db,
         checkboxChanged: checkboxChanged,
         deleteTask: deleteTask,
+        toggleStar: toggleStar,
+        editTask: editTask,
+        addReminder: addReminder,
       ),
       const CalendarPage(),
       const MePage(),
@@ -179,55 +256,24 @@ class _HomePageState extends State<HomePage> {
           children: [
             DrawerHeader(
               decoration: BoxDecoration(color: Theme.of(context).primaryColor),
-              child: Container(
-                width: double.infinity,
-                alignment: Alignment.centerLeft,
-                child: Row(
-                  children: [
-                    Icon(Icons.check_box, size: 40, color: Colors.white),
-                    const SizedBox(width: 10),
-                    const Text(
-                      'To-Do List',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                      ),
+              child: Row(
+                children: [
+                  Icon(Icons.check_box, size: 40, color: Colors.white),
+                  const SizedBox(width: 10),
+                  const Text(
+                    'To-Do List',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
             ListTile(
-              leading: Icon(
-                Icons.star_rate_rounded,
-                color: Theme.of(context).primaryColor,
-              ),
+              leading: Icon(Icons.star, color: Theme.of(context).primaryColor),
               title: const Text('Starred Tasks'),
-              onTap: () => Navigator.pop(context),
-            ),
-            ListTile(
-              leading: Icon(
-                Icons.category,
-                color: Theme.of(context).primaryColor,
-              ),
-              title: const Text('Categories'),
-              onTap: () => Navigator.pop(context),
-            ),
-            ListTile(
-              leading: Icon(
-                Icons.brush_outlined,
-                color: Theme.of(context).primaryColor,
-              ),
-              title: const Text('Themes'),
-              onTap: () => Navigator.pop(context),
-            ),
-            ListTile(
-              leading: Icon(
-                Icons.settings,
-                color: Theme.of(context).primaryColor,
-              ),
-              title: const Text('Settings'),
               onTap: () => Navigator.pop(context),
             ),
           ],
@@ -238,10 +284,7 @@ class _HomePageState extends State<HomePage> {
         onTap: (index) => setState(() => _selectedIndex = index),
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.task), label: 'Tasks'),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.calendar_today_rounded),
-            label: 'Calendar',
-          ),
+          BottomNavigationBarItem(icon: Icon(Icons.calendar_today_rounded), label: 'Calendar'),
           BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Me'),
         ],
       ),
@@ -260,12 +303,18 @@ class TaskListView extends StatelessWidget {
   final ToDoDataBase db;
   final Function(bool?, int) checkboxChanged;
   final Function(int) deleteTask;
+  final Function(int) toggleStar;
+  final Function(int) editTask;
+  final Function(int) addReminder;
 
   const TaskListView({
     super.key,
     required this.db,
     required this.checkboxChanged,
     required this.deleteTask,
+    required this.toggleStar,
+    required this.editTask,
+    required this.addReminder,
   });
 
   @override
@@ -277,9 +326,12 @@ class TaskListView extends StatelessWidget {
         return ToDoTile(
           taskName: task['title'],
           taskCompleted: task['isCompleted'],
-          isStarred: task['isStarred'], // ✅ Add this line
+          isStarred: task['isStarred'],
           onChanged: (value) => checkboxChanged(value, index),
           deleteFunction: (context) => deleteTask(index),
+          onToggleStar: () => toggleStar(index),
+          onEdit: () => editTask(index),
+          onAddReminder: () => addReminder(index),
         );
       },
     );
