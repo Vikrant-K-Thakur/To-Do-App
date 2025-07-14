@@ -1,0 +1,10 @@
+# Handle line endings for Dart & config files
+*.dart text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.json text eol=lf
+*.lock text eol=lf
+*.md text eol=lf
+
+# Auto normalize other text files
+* text=auto
